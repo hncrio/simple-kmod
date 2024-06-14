@@ -1,23 +1,52 @@
-/*  
- *  simple-kmod.c - The simplest kernel module.
- */
-#include <linux/module.h>   /* Needed by all modules */
-#include <linux/kernel.h>   /* Needed for KERN_INFO */
+#include<linux/kernel.h>
+#include<linux/module.h>
+#include<linux/kthread.h>
 
-MODULE_LICENSE("MIT");
-MODULE_VERSION(KMODVER);
+struct task_struct *task0;
+static spinlock_t spinlock;
+int val;
 
-int init_module(void)
+int task(void *arg)
 {
-    printk(KERN_INFO "Hello world from simple_kmod.\n");
+    printk(KERN_INFO "%s:%d\n",__func__,__LINE__);
+    /* To generate panic uncomment following */
+    /* panic("softlockup: hung tasks"); */
 
-    /* 
-     * A non 0 return means init_module failed; module can't be loaded. 
-     */
+    while(!kthread_should_stop()) {
+        printk(KERN_INFO "%s:%d\n",__func__,__LINE__);
+        spin_lock(&spinlock);
+        /* busy loop in critical section */
+        while(1) {
+            printk(KERN_INFO "%s:%d\n",__func__,__LINE__);
+        }
+
+        spin_unlock(&spinlock);
+    }
+
+    return val;
+}
+
+static int softlockup_init(void)
+{
+    printk(KERN_INFO "%s:%d\n",__func__,__LINE__);
+
+    val = 1;
+    spin_lock_init(&spinlock);
+    task0 = kthread_run(&task,(void *)val,"softlockup_thread");
+    set_cpus_allowed_ptr(task0, cpumask_of(0));
+
     return 0;
 }
 
-void cleanup_module(void)
+static void softlockup_exit(void)
 {
-    printk(KERN_INFO "Goodbye world from simple_kmod.\n");
+    printk(KERN_INFO "%s:%d\n",__func__,__LINE__);
+    kthread_stop(task0);
 }
+
+module_init(softlockup_init);
+module_exit(softlockup_exit);
+
+MODULE_AUTHOR("Saiyam Doshi");
+MODULE_DESCRIPTION("Test module to generate CPU soft lock-up/panic");
+MODULE_LICENSE("GPL v2");
